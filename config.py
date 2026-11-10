@@ -21,7 +21,7 @@ SESSION_FILE = str(DATA_DIR / "scambaiter.session")
 
 # Gemini / LLM Settings
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest").strip()
 
 # Timing & Behavior
 MIN_DELAY_SECONDS = int(os.getenv("MIN_DELAY_SECONDS", "25"))
