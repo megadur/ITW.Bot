@@ -40,33 +40,15 @@ async def refresh_contacts():
     except Exception as e:
         logger.warning(f"Konnte Kontakte nicht direkt abrufen: {e}")
 
-@client.on(events.NewMessage(incoming=True))
-async def handle_incoming_message(event):
-    # 1. Nur private Direktnachrichten (keine Gruppen, keine Kanäle)
-    if not event.is_private:
-        return
-
-    sender = await event.get_sender()
-    if not isinstance(sender, User):
-        return
-
-    # 2. Eigene Nachrichten, Bots und verifizierte Accounts ignorieren
-    if sender.is_self or sender.bot or sender.verified:
-        return
-
-    # 3. Sicherheitsfilter: Ist der Absender in den Kontakten?
-    if sender.contact or sender.id in KNOWN_CONTACT_IDS:
-        logger.debug(f"Ignoriere Nachricht von Kontakt: {sender.id} ({sender.first_name})")
-        return
-
-    message_text = event.raw_text.strip()
+async def process_scammer_message(sender: User, message):
+    """Verarbeitet eine Scammer-Nachricht (egal ob neu eingetroffen oder bereits ungelesen im Postfach)."""
+    message_text = message.raw_text.strip() if hasattr(message, 'raw_text') and message.raw_text else ""
     if not message_text:
-        # Falls nur Sticker oder Bild ohne Text
         message_text = "[Bild/Sticker/Sprachnachricht empfangen]"
 
-    logger.info(f"🚨 Neuer Scambait-Kandidat: {sender.first_name} (ID: {sender.id}) -> '{message_text}'")
+    logger.info(f"🚨 Scambait-Aktion für: {sender.first_name} (ID: {sender.id}) -> '{message_text}'")
 
-    # 4. In Datenbank erfassen / prüfen
+    # In Datenbank erfassen / prüfen
     chat_info = database.get_or_create_chat(
         user_id=sender.id,
         first_name=sender.first_name or "",
@@ -83,11 +65,10 @@ async def handle_incoming_message(event):
         logger.info(f"User {sender.id} hat Limit von {config.MAX_REPLIES_PER_CHAT} erreicht.")
         return
 
-    # Eingehende Nachricht speichern
+    # Nachricht speichern
     database.save_message(sender.id, "scammer", message_text)
 
-    # 5. Menschliches Verhalten simulieren:
-    # Erst nach kurzer Zeit als gelesen markieren, dann nachdenken, dann tippen
+    # Menschliches Verhalten simulieren
     total_delay = random.randint(config.MIN_DELAY_SECONDS, config.MAX_DELAY_SECONDS)
     read_delay = min(5, total_delay // 4)
     typing_delay = min(config.TYPING_DURATION_SECONDS, total_delay // 3)
@@ -96,28 +77,31 @@ async def handle_incoming_message(event):
     logger.info(f"⏳ Warte {total_delay}s bis zur Antwort (Read: {read_delay}s, Pause: {wait_before_typing}s, Tippen: {typing_delay}s)...")
 
     await asyncio.sleep(read_delay)
-    await event.mark_read()
+    try:
+        await message.mark_read()
+    except Exception as e:
+        logger.debug(f"mark_read fehlgeschlagen: {e}")
 
     await asyncio.sleep(wait_before_typing)
 
-    # 6. KI-Antwort generieren
+    # KI-Antwort generieren
     history = database.get_chat_history(sender.id, limit=10)
     reply_text = brain.generate_reply(history)
 
-    # 7. "Tippt..." Status anzeigen
+    # "Tippt..." Status anzeigen
     try:
         async with client.action(sender.id, 'typing'):
             await asyncio.sleep(typing_delay)
     except Exception as e:
         logger.debug(f"Typing-Action fehlgeschlagen: {e}")
 
-    # 8. Antwort senden
+    # Antwort senden
     try:
-        await event.reply(reply_text)
+        await message.reply(reply_text)
         database.save_message(sender.id, "bot", reply_text)
         logger.info(f"📤 Antwort an {sender.first_name} ({sender.id}) gesendet: '{reply_text}'")
 
-        # 9. Optional: Info in deine eigenen "Gespeicherten Nachrichten"
+        # Optional: Info in deine eigenen "Gespeicherten Nachrichten"
         if config.NOTIFY_SAVED_MESSAGES:
             summary = (
                 f"🎣 **Scambaiter Live-Update**\n"
@@ -128,6 +112,46 @@ async def handle_incoming_message(event):
             await client.send_message('me', summary)
     except Exception as e:
         logger.error(f"Fehler beim Senden der Antwort an {sender.id}: {e}")
+
+@client.on(events.NewMessage(incoming=True))
+async def handle_incoming_message(event):
+    if not event.is_private:
+        return
+
+    sender = await event.get_sender()
+    if not isinstance(sender, User):
+        return
+
+    if sender.is_self or sender.bot or sender.verified:
+        return
+
+    if sender.contact or sender.id in KNOWN_CONTACT_IDS:
+        logger.debug(f"Ignoriere Nachricht von Kontakt: {sender.id} ({sender.first_name})")
+        return
+
+    await process_scammer_message(sender, event.message)
+
+async def check_existing_unread_messages():
+    """Scannt beim Start alle Dialoge nach bereits wartenden ungelesenen Nachrichten von Nicht-Kontakten."""
+    logger.info("🔍 Scanne nach bereits wartenden Nachrichten von Unbekannten...")
+    try:
+        async for dialog in client.iter_dialogs(limit=50):
+            if not dialog.is_user:
+                continue
+            entity = dialog.entity
+            if not isinstance(entity, User):
+                continue
+            if entity.is_self or entity.bot or entity.verified:
+                continue
+            if entity.contact or entity.id in KNOWN_CONTACT_IDS:
+                continue
+            
+            # Wenn ungelesen und letzte Nachricht nicht von uns
+            if dialog.unread_count > 0 and dialog.message and not dialog.message.out:
+                logger.info(f"🎯 Ungelesener Chat von Unbekannt gefunden: {entity.first_name} (ID: {entity.id})")
+                asyncio.create_task(process_scammer_message(entity, dialog.message))
+    except Exception as e:
+        logger.warning(f"Fehler beim Prüfen bestehender Dialoge: {e}")
 
 async def main():
     database.init_db()
@@ -140,8 +164,11 @@ async def main():
     
     me = await client.get_me()
     logger.info(f"Eingeloggt als: {me.first_name} (@{me.username or 'kein username'}) [ID: {me.id}]")
-    logger.info("👂 Bot lauscht auf eingehende Nachrichten von Nicht-Kontakten...")
+
+    # Auch bereits vor dem Start eingegangene ungelesene Chats verarbeiten
+    await check_existing_unread_messages()
     
+    logger.info("👂 Bot lauscht auf eingehende Nachrichten von Nicht-Kontakten...")
     await client.run_until_disconnected()
 
 if __name__ == "__main__":
