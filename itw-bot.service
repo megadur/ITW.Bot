@@ -1,0 +1,15 @@
+[Unit]
+Description=ITW Telegram Scambaiter Bot (Opa Günther)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ITW.Bot
+ExecStart=/opt/ITW.Bot/venv/bin/python -u bot.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/opt/ITW.Bot/.env
+
+[Install]
+WantedBy=multi-user.target

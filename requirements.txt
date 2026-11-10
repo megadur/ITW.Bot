@@ -1,0 +1,4 @@
+# ITW.Bot - Telegram Scambaiter Requirements
+telethon>=1.36.0
+google-genai>=0.1.1
+python-dotenv>=1.0.0

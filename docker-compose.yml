@@ -1,0 +1,12 @@
+services:
+  itw-bot:
+    build: .
+    container_name: itw_scambaiter
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    stdin_open: true # wichtig für die Ersteinrichtung / Code-Eingabe
+    tty: true
