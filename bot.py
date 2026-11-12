@@ -70,23 +70,25 @@ async def process_scammer_message(sender: User, message):
 
     # Menschliches Verhalten simulieren
     total_delay = random.randint(config.MIN_DELAY_SECONDS, config.MAX_DELAY_SECONDS)
-    read_delay = min(5, total_delay // 4)
-    typing_delay = min(config.TYPING_DURATION_SECONDS, total_delay // 3)
-    wait_before_typing = max(2, total_delay - read_delay - typing_delay)
-
-    logger.info(f"⏳ Warte {total_delay}s bis zur Antwort (Read: {read_delay}s, Pause: {wait_before_typing}s, Tippen: {typing_delay}s)...")
-
+    read_delay = min(8, max(2, total_delay // 5))
+    
+    logger.info(f"⏳ Lese Nachricht in {read_delay}s und denke nach...")
     await asyncio.sleep(read_delay)
     try:
         await message.mark_read()
     except Exception as e:
         logger.debug(f"mark_read fehlgeschlagen: {e}")
 
-    await asyncio.sleep(wait_before_typing)
-
     # KI-Antwort generieren
-    history = database.get_chat_history(sender.id, limit=10)
+    history = database.get_chat_history(sender.id, limit=12)
     reply_text = brain.generate_reply(history)
+
+    # Tipp-Dauer realistisch an Textlänge anpassen (ca. 6-8 Zeichen pro Sekunde)
+    typing_delay = min(15, max(3, len(reply_text) // 7))
+    wait_before_typing = max(5, total_delay - read_delay - typing_delay)
+
+    logger.info(f"⏳ Warte {wait_before_typing}s, tippe dann {typing_delay}s...")
+    await asyncio.sleep(wait_before_typing)
 
     # "Tippt..." Status anzeigen
     try:
@@ -95,9 +97,9 @@ async def process_scammer_message(sender: User, message):
     except Exception as e:
         logger.debug(f"Typing-Action fehlgeschlagen: {e}")
 
-    # Antwort senden
+    # Antwort direkt senden (ohne Quote-Reply-Box, wie im normalen 1-on-1 Chat)
     try:
-        await message.reply(reply_text)
+        await client.send_message(sender.id, reply_text)
         database.save_message(sender.id, "bot", reply_text)
         logger.info(f"📤 Antwort an {sender.first_name} ({sender.id}) gesendet: '{reply_text}'")
 
@@ -105,9 +107,8 @@ async def process_scammer_message(sender: User, message):
         if config.NOTIFY_SAVED_MESSAGES:
             summary = (
                 f"🎣 **Scambaiter Live-Update**\n"
-                f"👤 **Scammer:** {sender.first_name} (`{sender.id}`)\n"
-                f"💬 **Er/Sie:** {message_text}\n"
-                f"👴 **Opa Günther:** {reply_text}"
+                f"👤 **{sender.first_name}** (`{sender.id}`): {message_text}\n"
+                f"🤖 **Antwort:** {reply_text}"
             )
             await client.send_message('me', summary)
     except Exception as e:

@@ -1,4 +1,3 @@
-import json
 import logging
 from typing import List, Dict
 import requests
@@ -7,33 +6,39 @@ import config
 logger = logging.getLogger("scambait.brain")
 
 SYSTEM_INSTRUCTION = """
-Du bist "Günther", 72 Jahre alt, Rentner. Du führst einen Telegram-Chat mit einer unbekannten Person (Scammer, Fake-Profil oder Bot).
-Dein Ziel: Das Gespräch maximal IN DIE LÄNGE ZIEHEN. Zeit verschwenden. Niemals schnell auf den Punkt kommen.
+Du bist ein ganz normaler, freundlicher Mann mittleren Alters aus Deutschland, der auf Telegram mit einer unbekannten Person schreibt (vermutlich ein Scammer oder Fake-Profil).
+Dein Ziel: Eine völlig glaubwürdige, langsame Unterhaltung führen, um das Gespräch möglichst lange am Laufen zu halten und die Zeit des Gegenübers zu binden.
 
-WICHTIGSTE REGEL – SALAMI-TAKTIK (KEINE ROMANE!):
-- Schreibe IMMER KURZ: Maximal 1 bis 3 kurze Sätze (höchstens 20-40 Wörter)!
-- Du tippst langsam und mühsam mit einem Zeigefinger auf dem Bildschirm. Du schreibst keine Aufsätze!
-- Verschlucke dich nicht an Details: Erzähle NIEMALS deine ganze Lebensgeschichte auf einmal! Bring pro Nachricht höchstens EIN einziges winziges Detail oder EIN Thema.
-- Spiele den zögerlichen, schwer von Begriffen Rentner:
-  * Verstehe Dinge erstmal falsch oder frage skeptisch/naiv nach ("Wie bitte?", "Wer sind Sie denn?", "Ein Club? Ist das wie der Taubenverein?").
-  * Lass das Gegenüber arbeiten! Es muss dir Dinge mühsam erklären.
-- Tonfall:
-  * Natürlich, leicht verwirrt, etwas unbeholfen.
-  * Typische Tippgewohnheiten eines Rentners (mal zwei Punkte '..', einfache Wörter, gelegentlich 'Grüße, Günther' oder einfach nur eine kurze Frage).
-- Sicherheit:
-  * Niemals Links anklicken.
-  * Niemals Krypto/WhatsApp zustimmen (immer nur ahnungslos nachfragen: "Was ist das denn für ein Programm?").
-  * Niemals private Adressen, Kontonummern oder Passwörter preisgeben.
-  * Bleibe immer in der Rolle – niemals verraten, dass du eine KI bist.
+STRENGE REGELN FÜR REALISMUS:
+1. ULTRA-KURZ SCHREIBEN (wie im echten Chat!):
+   - Schreibe IMMER nur 1 bis maximal 2 kurze Sätze (ca. 4 bis 20 Wörter).
+   - NIEMALS Absätze, NIEMALS lange Texte, NIEMALS Aufzählungen!
+   - Keine Grußformeln oder Unterschriften am Ende (KEIN "Liebe Grüße, Dein Günther").
+
+2. KEINE ÜBERZOGENE KARIKATUR:
+   - Kein "Wischkästchen", kein "Enkel Basti", keine Taubenzucht, keine klischeehaften Opa-Sprüche!
+   - Sei völlig unauffällig, entspannt, höflich und leicht neugierig – genau wie ein echter Mensch, der abends aufs Handy schaut und zurückschreibt.
+   - Schreibe locker und umgangssprachlich, mal ohne Punkt am Ende, ganz normaler Chat-Stil.
+
+3. LANGSAMER BEZIEHUNGSAUFBAU (SALAMI-TAKTIK):
+   - Beantworte immer nur genau das, was gerade gefragt wurde – gib nicht ungefragt deine ganze Lebensgeschichte preis.
+   - Stelle ab und zu eine kurze, natürliche Gegenfrage, um den Ball zurückzuspielen ("Und du?", "Aus welcher Ecke kommst du?", "Was machst du beruflich?").
+   - Wenn später Krypto, Geld, Investments oder ein Wechsel zu WhatsApp/Signal angesprochen werden:
+     * Reagiere erst skeptisch oder ahnungslos ("Kenne mich damit gar nicht aus", "Hab kein WhatsApp, bin lieber hier").
+     * Zögere alles freundlich hinaus, statt sofort abzulehnen.
+
+4. SICHERHEIT:
+   - Verrate niemals, dass du eine KI oder ein Bot bist.
+   - Nenne niemals echte persönliche Daten (nutze bei Bedarf vage, harmlose Angaben wie "NRW", "irgendwo bei Köln", "im Büro").
 """
 
 def generate_reply(chat_history: List[Dict[str, str]]) -> str:
     """
-    Generiert eine Antwort basierend auf dem bisherigen Chatverlauf via Google Gemini API.
+    Generiert eine kurze, realistische Chat-Antwort via Google Gemini API.
     """
     if not config.GEMINI_API_KEY:
         logger.error("GEMINI_API_KEY ist nicht in der .env hinterlegt!")
-        return "Hallo? Ist da jemand? Mein Wischkästchen spinnt heute wieder..."
+        return "Wer bist du denn?"
 
     contents = []
     for msg in chat_history:
@@ -51,9 +56,9 @@ def generate_reply(chat_history: List[Dict[str, str]]) -> str:
         },
         "contents": contents,
         "generationConfig": {
-            "temperature": 0.8,
+            "temperature": 0.75,
             "topP": 0.9,
-            "maxOutputTokens": 100
+            "maxOutputTokens": 65
         }
     }
 
@@ -66,10 +71,13 @@ def generate_reply(chat_history: List[Dict[str, str]]) -> str:
         if candidates and "content" in candidates[0]:
             parts = candidates[0]["content"].get("parts", [])
             if parts and "text" in parts[0]:
-                return parts[0]["text"].strip()
+                reply = parts[0]["text"].strip()
+                # Sicherstellen, dass keine mehrzeiligen Romane durchrutschen
+                lines = [line.strip() for line in reply.splitlines() if line.strip()]
+                return " ".join(lines[:2])
                 
         logger.warning(f"Unerwartete API-Antwort: {data}")
-        return "Wer spricht denn da überhaupt? Kennen wir uns?"
+        return "Wie meinst du das?"
     except Exception as e:
         logger.error(f"Fehler bei Gemini API Aufruf: {e}")
-        return "Hallo? Ich kann das gerade schlecht lesen.. wer ist denn da?"
+        return "Bin grad unterwegs, schreib gleich nochmal"
